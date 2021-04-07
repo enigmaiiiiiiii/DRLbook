@@ -31,7 +31,7 @@ target_network = AtariNet(ACTIONS_SIZE)
 class Agent(object):
     def __init__(self, hotstart=True):
         self.network, self.target_network = AtariNet(ACTIONS_SIZE), AtariNet(ACTIONS_SIZE)
-        if hotstart is True:
+        if hotstart and os.path.exists(".\\TrainedAgent\\state.pth"):
             checkpoint = torch.load(".\\TrainedAgent\\state.pth")
             self.network.load_state_dict(checkpoint['network'])
             self.target_network.load_state_dict(checkpoint['target_network'])
