@@ -24,8 +24,7 @@ env = gym.make('Pong-v0')
 env = env.unwrapped
 ACTIONS_SIZE = env.action_space.n  # [0:5]  6
 
-network = AtariNet(ACTIONS_SIZE)
-target_network = AtariNet(ACTIONS_SIZE)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class Agent(object):
@@ -36,18 +35,20 @@ class Agent(object):
             self.network.load_state_dict(checkpoint['network'])
             self.target_network.load_state_dict(checkpoint['target_network'])
             self.optimizer.load_state_dict(checkpoint['optimizer'])
-            self.memory = checkpoint['memory']
         else:
             self.memory = deque()  # 数据量较多时，deque比list快？
             self.optimizer = torch.optim.Adam(self.network.parameters(), lr=LR)
             """只优化主网络参数"""
+        self.memory = deque()
         self.learning_count = 0
         self.loss_func = nn.MSELoss()
+        self.network.to(device)
+        self.target_network.to(device)
 
     def action(self, state, israndom):
         if israndom and random.random() < EPSILON:
             return np.random.randint(0, ACTIONS_SIZE)
-        state = torch.unsqueeze(torch.FloatTensor(state), 0)
+        state = torch.unsqueeze(torch.FloatTensor(state,device=device), 0)
         actions_value = self.network.forward(state)  # 通过网络选择动作
         return torch.max(actions_value, 1)[1].data.numpy()[0]
 
@@ -109,11 +110,11 @@ class Agent(object):
         self.learning_count += 1
 
         batch = random.sample(self.memory, BATCH_SIZE)
-        state = torch.FloatTensor([x[0] for x in batch])
-        action = torch.LongTensor([[x[1]] for x in batch])
-        reward = torch.FloatTensor([[x[2]] for x in batch])
-        next_state = torch.FloatTensor([x[3] for x in batch])
-        done = torch.FloatTensor([[x[4]] for x in batch])
+        state = torch.FloatTensor([x[0] for x in batch], device=device)
+        action = torch.LongTensor([[x[1]] for x in batch],device=device)
+        reward = torch.FloatTensor([[x[2]] for x in batch],device=device)
+        next_state = torch.FloatTensor([x[3] for x in batch],device=device)
+        done = torch.FloatTensor([[x[4]] for x in batch],device=device)
         """每次从100000个回忆中取出32个样本进行训练"""
         eval_q = self.network.forward(state).gather(1, action)  # 主网络Q
         """从主网络中返回动作价值"""
@@ -130,12 +131,11 @@ class Agent(object):
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
-        if i_episode % 100 == 0:
+        if i_episode % 50 == 0:
             """每100局游戏保存一次参数"""
             state = {'network': self.network.state_dict(),
                      'target_network': self.target_network.state_dict(),
                      'optimizer': self.optimizer.state_dict(),
-                     'memory': self.memory
                      }
             torch.save(state, ".\\TrainedAgent\\state.pth")
 
@@ -147,7 +147,7 @@ for i_episode in range(TOTAL_EPISODES):
     state = preprocess(state)
     """像素状态处理，压缩转置"""
     while True:
-        env.render()
+        # env.render()
         action = agent.action(state, True)
         next_state, reward, done, info = env.step(action)
         next_state = preprocess(next_state)
@@ -155,7 +155,7 @@ for i_episode in range(TOTAL_EPISODES):
         对于Pong-v0这个游戏，state是像素，得分直接用作reward
         将图片数据裁剪，转置成模型输入数据tensor
         """
-        agent.learn(state, action, reward, next_state, done)
+        agent.hotlearn(state, action, reward, next_state, done, i_episode)
 
         state = next_state
         if done:
