@@ -48,9 +48,9 @@ class Agent(object):
     def action(self, state, israndom):
         if israndom and random.random() < EPSILON:
             return np.random.randint(0, ACTIONS_SIZE)
-        state = torch.unsqueeze(torch.FloatTensor(state,device=device), 0)
+        state = torch.unsqueeze(torch.FloatTensor(state), 0).cuda()
         actions_value = self.network.forward(state)  # 通过网络选择动作
-        return torch.max(actions_value, 1)[1].data.numpy()[0]
+        return torch.max(actions_value.cpu(), 1)[1].data.numpy()[0]
 
     def learn(self, state, action, reward, next_state, done):
         if done:
