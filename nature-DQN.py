@@ -70,11 +70,11 @@ class Agent(object):
         self.learning_count += 1
 
         batch = random.sample(self.memory, BATCH_SIZE)
-        state = torch.FloatTensor([x[0] for x in batch])
-        action = torch.LongTensor([[x[1]] for x in batch])
-        reward = torch.FloatTensor([[x[2]] for x in batch])
-        next_state = torch.FloatTensor([x[3] for x in batch])
-        done = torch.FloatTensor([[x[4]] for x in batch])
+        state = torch.cuda.FloatTensor([x[0] for x in batch])
+        action = torch.cuda.LongTensor([[x[1]] for x in batch])
+        reward = torch.cuda.FloatTensor([[x[2]] for x in batch])
+        next_state = torch.cuda.FloatTensor([x[3] for x in batch])
+        done = torch.cuda.FloatTensor([[x[4]] for x in batch])
         """每次从100000个回忆中取出32个样本进行训练"""
         eval_q = self.network.forward(state).gather(1, action)  # 主网络Q
         """从主网络中返回动作价值"""
@@ -110,11 +110,11 @@ class Agent(object):
         self.learning_count += 1
 
         batch = random.sample(self.memory, BATCH_SIZE)
-        state = torch.FloatTensor([x[0] for x in batch], device=device)
-        action = torch.LongTensor([[x[1]] for x in batch],device=device)
-        reward = torch.FloatTensor([[x[2]] for x in batch],device=device)
-        next_state = torch.FloatTensor([x[3] for x in batch],device=device)
-        done = torch.FloatTensor([[x[4]] for x in batch],device=device)
+        state = torch.cuda.FloatTensor([x[0] for x in batch])
+        action = torch.cuda.LongTensor([[x[1]] for x in batch])
+        reward = torch.cuda.FloatTensor([[x[2]] for x in batch])
+        next_state = torch.cuda.FloatTensor([x[3] for x in batch])
+        done = torch.cuda.FloatTensor([[x[4]] for x in batch])
         """每次从100000个回忆中取出32个样本进行训练"""
         eval_q = self.network.forward(state).gather(1, action)  # 主网络Q
         """从主网络中返回动作价值"""
@@ -133,11 +133,11 @@ class Agent(object):
         self.optimizer.step()
         if i_episode % 50 == 0:
             """每100局游戏保存一次参数"""
-            state = {'network': self.network.state_dict(),
+            train_state = {'network': self.network.state_dict(),
                      'target_network': self.target_network.state_dict(),
                      'optimizer': self.optimizer.state_dict(),
                      }
-            torch.save(state, ".\\TrainedAgent\\state.pth")
+            torch.save(train_state, ".\\TrainedAgent\\state.pth")
 
 
 agent = Agent()
