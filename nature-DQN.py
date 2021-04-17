@@ -7,6 +7,11 @@ import random
 from net import AtariNet
 from util import preprocess
 import os
+from PIL import Image
+from torch.utils.tensorboard import SummaryWriter
+import time
+
+writer = SummaryWriter('./losslog')
 
 BATCH_SIZE = 32
 LR = 0.001
@@ -30,18 +35,17 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 class Agent(object):
     def __init__(self, hotstart=True):
         self.network, self.target_network = AtariNet(ACTIONS_SIZE), AtariNet(ACTIONS_SIZE)
+        self.optimizer = torch.optim.Adam(self.network.parameters(), lr=LR)  # 优化器只更新主网络参数，因为要从target网络中选择参数
         if hotstart and os.path.exists(".\\TrainedAgent\\state.pth"):
             checkpoint = torch.load(".\\TrainedAgent\\state.pth")
             self.network.load_state_dict(checkpoint['network'])
             self.target_network.load_state_dict(checkpoint['target_network'])
-            self.optimizer.load_state_dict(checkpoint['optimizer'])
-        else:
-            self.memory = deque()  # 数据量较多时，deque比list快？
-            self.optimizer = torch.optim.Adam(self.network.parameters(), lr=LR)
+            # self.optimizer.load_state_dict(checkpoint['optimizer'])
             """只优化主网络参数"""
-        self.memory = deque()
+        self.memory = deque()  # 数据量较多时，deque比list快？
         self.learning_count = 0
         self.loss_func = nn.MSELoss()
+        self.loss:float
         self.network.to(device)
         self.target_network.to(device)
 
@@ -70,7 +74,7 @@ class Agent(object):
         self.learning_count += 1
 
         batch = random.sample(self.memory, BATCH_SIZE)
-        state = torch.cuda.FloatTensor([x[0] for x in batch])
+        state = torch.FloatTensor([x[0] for x in batch])
         action = torch.cuda.LongTensor([[x[1]] for x in batch])
         reward = torch.cuda.FloatTensor([[x[2]] for x in batch])
         next_state = torch.cuda.FloatTensor([x[3] for x in batch])
@@ -86,10 +90,10 @@ class Agent(object):
         """
         目标价值函数计算自target_network
         target_Q(s,a) = r + γ*maxQ(s,)"""
-        loss = self.loss_func(eval_q, target_q)
+        self.loss = self.loss_func(eval_q, target_q)
 
         self.optimizer.zero_grad()
-        loss.backward()
+        self.loss.backward()
         self.optimizer.step()
 
     def hotlearn(self, state, action, reward, next_state, done, i_episode):
@@ -126,40 +130,54 @@ class Agent(object):
         """
         目标价值函数计算自target_network
         target_Q(s,a) = r + γ*maxQ(s,)"""
-        loss = self.loss_func(eval_q, target_q)
+        self.loss = self.loss_func(eval_q, target_q)
+
 
         self.optimizer.zero_grad()
-        loss.backward()
+        self.loss.backward()
         self.optimizer.step()
         if i_episode % 50 == 0:
             """每100局游戏保存一次参数"""
             train_state = {'network': self.network.state_dict(),
-                     'target_network': self.target_network.state_dict(),
-                     'optimizer': self.optimizer.state_dict(),
-                     }
+                           'target_network': self.target_network.state_dict(),
+                           'optimizer': self.optimizer.state_dict(),
+                           }
             torch.save(train_state, ".\\TrainedAgent\\state.pth")
 
 
 agent = Agent()
+imageno = 1
 
 for i_episode in range(TOTAL_EPISODES):
+    start_time = time.time()
     state = env.reset()
     state = preprocess(state)
+    avg_loss = []
     """像素状态处理，压缩转置"""
     while True:
+        """一方分数达到20，done为True,while循环结束"""
         # env.render()
         action = agent.action(state, True)
         next_state, reward, done, info = env.step(action)
+        if reward == 1:
+            state_img = Image.fromarray(state.squeeze())
+            imageno += 1
+            image_path = os.path.join(".\\image\\", str(imageno) + ".jpg")
+            state_img.save(image_path,"jpeg")
         next_state = preprocess(next_state)
         """
         对于Pong-v0这个游戏，state是像素，得分直接用作reward
         将图片数据裁剪，转置成模型输入数据tensor
         """
         agent.hotlearn(state, action, reward, next_state, done, i_episode)
-
+        avg_loss.append(agent.loss)
         state = next_state
         if done:
             break
+    avg_loss
+    time_1 = time.time() - start_time
+    writer.add_scalar("loss", agent.loss.item(), i_episode)
+    writer.add_scalar("time_1",time_1,i_episode)
     if EPSILON > FINAL_EPSILON:
         EPSILON -= (START_EPSILON - FINAL_EPSILON) / EXPLORE
 
@@ -175,11 +193,10 @@ for i_episode in range(TOTAL_EPISODES):
             next_state, reward, done, info = env.step(action)
             next_state = preprocess(next_state)
 
-            total_reward += reward
+            # total_reward += reward
 
             state = next_state
             if done:
                 break
-        print('episode: {} , total_reward: {}'.format(i_episode, round(total_reward, 3)))
-
+        # print('episode: {} , total_reward: {}'.format(i_episode, round(total_reward, 3)))
 env.close()
