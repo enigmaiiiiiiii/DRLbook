@@ -10,10 +10,11 @@ import os
 from PIL import Image
 from torch.utils.tensorboard import SummaryWriter
 import time
+import pickle
 
 writer = SummaryWriter('./losslog')
 
-BATCH_SIZE = 32
+BATCH_SIZE = 128
 LR = 0.001
 START_EPSILON = 1.0
 FINAL_EPSILON = 0.1
@@ -36,16 +37,17 @@ class Agent(object):
     def __init__(self, hotstart=True):
         self.network, self.target_network = AtariNet(ACTIONS_SIZE), AtariNet(ACTIONS_SIZE)
         self.optimizer = torch.optim.Adam(self.network.parameters(), lr=LR)  # 优化器只更新主网络参数，因为要从target网络中选择参数
-        if hotstart and os.path.exists(".\\TrainedAgent\\state.pth"):
+        self.memory = deque()  # 数据量较多时，deque比list快？
+        if hotstart and os.path.exists(".\\TrainedAgent\\state.pth") and os.path.exists(".\\memory\\nature_DQN_memory"):
             checkpoint = torch.load(".\\TrainedAgent\\state.pth")
             self.network.load_state_dict(checkpoint['network'])
             self.target_network.load_state_dict(checkpoint['target_network'])
+            self.memory = pickle.load(open(".\\memory\\nature_DQN_memory", "wb"))
             # self.optimizer.load_state_dict(checkpoint['optimizer'])
             """只优化主网络参数"""
-        self.memory = deque()  # 数据量较多时，deque比list快？
         self.learning_count = 0
         self.loss_func = nn.MSELoss()
-        self.loss:float
+        self.loss = torch.FloatTensor(0).to(device)
         self.network.to(device)
         self.target_network.to(device)
 
@@ -64,8 +66,10 @@ class Agent(object):
         if len(self.memory) > MEMORY_SIZE:
             self.memory.popleft()  # 删除队列最左侧元素，即最遥远的记忆
         if len(self.memory) < MEMORY_THRESHOLD:
-            """每回合大约有1200个条记录加入memory,大约90个episode后开始训练神经网络model"""
+            """每回合大约有1200个条记录加入memory,大约80个episode后开始训练神经网络model"""
             return
+        elif len(self.memory) == MEMORY_THRESHOLD:
+            print("第{}回合开始神经网路训练".format(i_episode))
 
         if self.learning_count % UPDATE_TIME == 0:
             self.target_network.load_state_dict(self.network.state_dict())
@@ -74,11 +78,11 @@ class Agent(object):
         self.learning_count += 1
 
         batch = random.sample(self.memory, BATCH_SIZE)
-        state = torch.FloatTensor([x[0] for x in batch])
-        action = torch.cuda.LongTensor([[x[1]] for x in batch])
-        reward = torch.cuda.FloatTensor([[x[2]] for x in batch])
-        next_state = torch.cuda.FloatTensor([x[3] for x in batch])
-        done = torch.cuda.FloatTensor([[x[4]] for x in batch])
+        state = torch.FloatTensor([x[0] for x in batch]).to(device)
+        action = torch.LongTensor([[x[1]] for x in batch]).to(device)
+        reward = torch.FloatTensor([[x[2]] for x in batch]).to(device)
+        next_state = torch.FloatTensor([x[3] for x in batch]).to(device)
+        done = torch.FloatTensor([[x[4]] for x in batch]).to(device)
         """每次从100000个回忆中取出32个样本进行训练"""
         eval_q = self.network.forward(state).gather(1, action)  # 主网络Q
         """从主网络中返回动作价值"""
@@ -104,8 +108,10 @@ class Agent(object):
         if len(self.memory) > MEMORY_SIZE:
             self.memory.popleft()  # 删除队列最左侧元素，即最遥远的记忆
         if len(self.memory) < MEMORY_THRESHOLD:
-            """每回合大约有1200个条记录加入memory,大约90个episode后开始训练神经网络model"""
+            """每回合大约有1200个条记录加入memory,大约82个episode后开始训练神经网络model"""
             return
+        elif len(self.memory) == MEMORY_THRESHOLD:
+            print("第{}回合开始神经网络训练".format(i_episode))  # 输出神经网络训练开始回合
 
         if self.learning_count % UPDATE_TIME == 0:
             self.target_network.load_state_dict(self.network.state_dict())
@@ -114,11 +120,11 @@ class Agent(object):
         self.learning_count += 1
 
         batch = random.sample(self.memory, BATCH_SIZE)
-        state = torch.cuda.FloatTensor([x[0] for x in batch])
-        action = torch.cuda.LongTensor([[x[1]] for x in batch])
-        reward = torch.cuda.FloatTensor([[x[2]] for x in batch])
-        next_state = torch.cuda.FloatTensor([x[3] for x in batch])
-        done = torch.cuda.FloatTensor([[x[4]] for x in batch])
+        state = torch.FloatTensor([x[0] for x in batch]).to(device)
+        action = torch.LongTensor([[x[1]] for x in batch]).to(device)
+        reward = torch.FloatTensor([[x[2]] for x in batch]).to(device)
+        next_state = torch.FloatTensor([x[3] for x in batch]).to(device)
+        done = torch.FloatTensor([[x[4]] for x in batch]).to(device)
         """每次从100000个回忆中取出32个样本进行训练"""
         eval_q = self.network.forward(state).gather(1, action)  # 主网络Q
         """从主网络中返回动作价值"""
@@ -132,52 +138,62 @@ class Agent(object):
         target_Q(s,a) = r + γ*maxQ(s,)"""
         self.loss = self.loss_func(eval_q, target_q)
 
-
         self.optimizer.zero_grad()
         self.loss.backward()
         self.optimizer.step()
         if i_episode % 50 == 0:
-            """每100局游戏保存一次参数"""
+            """每50局游戏保存一次参数"""
             train_state = {'network': self.network.state_dict(),
                            'target_network': self.target_network.state_dict(),
                            'optimizer': self.optimizer.state_dict(),
                            }
             torch.save(train_state, ".\\TrainedAgent\\state.pth")
+            """每50回合固化记忆"""
+            pickle.dump(self.memory, open(".\\memory\\nature_DQN_memory", "wb"))
 
 
 agent = Agent()
-imageno = 1
+imageno = 0
+reward_num = 0
+reward_time = time.time()
 
 for i_episode in range(TOTAL_EPISODES):
     start_time = time.time()
     state = env.reset()
     state = preprocess(state)
-    avg_loss = []
     """像素状态处理，压缩转置"""
     while True:
         """一方分数达到20，done为True,while循环结束"""
         # env.render()
         action = agent.action(state, True)
         next_state, reward, done, info = env.step(action)
+
+        next_state = preprocess(next_state)
+        agent.hotlearn(state, action, reward, next_state, done, i_episode)
         if reward == 1:
+            """
+            对于Pong-v0这个游戏，state是像素，得分直接用作reward
+            将图片数据裁剪，转置成模型输入数据tensor
+            """
+            reward_num += 1
+            print("每得1分用时{}秒".format(time.time() - reward_time))  # 每次得分的耗时间隔
+            writer.add_scalar("get_1_score_time_cost", time.time() - reward_time, reward_num)  # 将得分耗时间隔曲线记录在tensorboard
+            reward_time = time.time()  # 得分时刻
+
             state_img = Image.fromarray(state.squeeze())
             imageno += 1
             image_path = os.path.join(".\\image\\", str(imageno) + ".jpg")
-            state_img.save(image_path,"jpeg")
-        next_state = preprocess(next_state)
-        """
-        对于Pong-v0这个游戏，state是像素，得分直接用作reward
-        将图片数据裁剪，转置成模型输入数据tensor
-        """
-        agent.hotlearn(state, action, reward, next_state, done, i_episode)
-        avg_loss.append(agent.loss)
+            state_img.save(image_path, "jpeg")  # 将得分瞬间保存成图片
+
+            if agent.loss.size() != torch.Size([0]):
+                writer.add_scalar("loss(reward=1)", agent.loss.cpu().detach().numpy(), reward_num)
+
         state = next_state
         if done:
             break
-    avg_loss
     time_1 = time.time() - start_time
-    writer.add_scalar("loss", agent.loss.item(), i_episode)
-    writer.add_scalar("time_1",time_1,i_episode)
+    writer.add_scalar("time_1", time_1, i_episode)
+    # print("训练时间：{:8f} ".format(time_1))
     if EPSILON > FINAL_EPSILON:
         EPSILON -= (START_EPSILON - FINAL_EPSILON) / EXPLORE
 
