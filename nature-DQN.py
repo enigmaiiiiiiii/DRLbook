@@ -13,11 +13,10 @@ import time
 import pickle
 from collections import namedtuple
 
-
-Transition = namedtuple("Transition",('state','action','reward','next_state','done'))
+Transition = namedtuple("Transition", ('state', 'action', 'reward', 'next_state', 'done'))
 writer = SummaryWriter('./losslog')
 
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 LR = 0.001
 START_EPSILON = 1.0
 FINAL_EPSILON = 0.1
@@ -25,8 +24,8 @@ EPSILON = START_EPSILON
 EXPLORE = 1000000
 GAMMA = 0.99
 TOTAL_EPISODES = 10000000
-MEMORY_SIZE = 1000000
-MEMORY_THRESHOLD = 100000
+MEMORY_SIZE = 100000  # 记忆容量
+MEMORY_THRESHOLD = 100000  # 开始训练阈值
 UPDATE_TIME = 10000
 TEST_FREQUENCY = 1000
 env = gym.make('Pong-v0')
@@ -40,7 +39,8 @@ class Agent(object):
     def __init__(self, hotstart=True):
         self.network, self.target_network = AtariNet(ACTIONS_SIZE), AtariNet(ACTIONS_SIZE)
         self.optimizer = torch.optim.Adam(self.network.parameters(), lr=LR)  # 优化器只更新主网络参数，因为要从target网络中选择参数
-        self.memory = deque()  # 数据量较多时，deque比list快？
+        """显存占用,loss反向传播，更新参数网络权重Weight,优化器占用大量现存"""
+        self.memory = deque(maxlen=MEMORY_SIZE)  # 数据量较多时，deque比list快？
         if hotstart and os.path.exists(".\\TrainedAgent\\state.pth"):
             checkpoint = torch.load(".\\TrainedAgent\\state.pth")
             self.network.load_state_dict(checkpoint['network'])
@@ -86,7 +86,6 @@ class Agent(object):
         batch = random.sample(self.memory, BATCH_SIZE)
         """每次从100000个回忆中取出BATCH_SIZE个样本进行训练"""
 
-
         state = torch.FloatTensor([x[0] for x in batch]).to(device)
         action = torch.LongTensor([[x[1]] for x in batch]).to(device)
         reward = torch.FloatTensor([[x[2]] for x in batch]).to(device)
@@ -114,8 +113,6 @@ class Agent(object):
             self.memory.append([state, action, reward, next_state, torch.tensor([0]).to(device)])
         else:
             self.memory.append([state, action, reward, next_state, torch.tensor([1]).to(device)])
-        if len(self.memory) > MEMORY_SIZE:
-            self.memory.popleft()  # 删除队列最左侧元素，即最遥远的记忆
         if len(self.memory) < MEMORY_THRESHOLD:
             """每回合大约有1200个条记录加入memory,大约82个episode后开始训练神经网络model"""
             return
@@ -130,12 +127,14 @@ class Agent(object):
 
         transitions = random.sample(self.memory, BATCH_SIZE)
         batch = Transition(*zip(*transitions))
-        """run时为什么变量会消失"""
+        """
+        run时为什么变量会消失
+        大量数据从cpu至gpu时会消耗大量时间"""
         state_batch = torch.cat(batch.state).unsqueeze(1)
-        action_batch = torch.cat(batch.action).view(-1,1)
-        reward_batch = torch.cat(batch.reward).view(-1,1)
+        action_batch = torch.cat(batch.action).view(-1, 1)
+        reward_batch = torch.cat(batch.reward).view(-1, 1)
         next_state_batch = torch.cat(batch.next_state).unsqueeze(1)
-        done_batch = torch.cat(batch.done).view(-1,1)
+        done_batch = torch.cat(batch.done).view(-1, 1)
 
         # batch = random.sample(self.memory,BATCH_SIZE)
         # state = torch.FloatTensor([x[0] for x in batch]).to(device)
@@ -144,7 +143,6 @@ class Agent(object):
         # next_state = torch.FloatTensor([x[3] for x in batch]).to(device)
         # done = torch.FloatTensor([[x[4]] for x in batch]).to(device)
         """占用很长时间"""
-
         """每次从100000个回忆中取出32个样本进行训练"""
         eval_q = self.network.forward(state_batch).gather(1, action_batch)  # 主网络Q
         """从主网络中返回动作价值"""
@@ -163,13 +161,13 @@ class Agent(object):
         self.optimizer.step()
 
 
-
 agent = Agent()
 imageno = 0
 reward_num = 0
 reward_time = time.time()
 
 for i_episode in range(TOTAL_EPISODES):
+    torch.cuda.empty_cache()
     start_time = time.time()
     state = env.reset()
     state = preprocess(state)
@@ -190,7 +188,7 @@ for i_episode in range(TOTAL_EPISODES):
         start = time.time()
         agent.hotlearn(state, action, reward, next_state, done, i_episode)
         end = time.time()
-        method_time = end-start
+        method_time = end - start
         total += method_time
         # if reward == 1:
         #     """
@@ -215,10 +213,10 @@ for i_episode in range(TOTAL_EPISODES):
             break
     time_1 = time.time() - start_time
     writer.add_scalar("time_1", time_1, i_episode)
-    print("训练时间总时间：{0:.4f}\thotlearn方法总时间：{1:.4f}\t百分比：{2:.2f}%".format(time_1,total,total/time_1*100))
+    print("训练时间总时间：{0:.4f}\thotlearn方法总时间：{1:.4f}\t百分比：{2:.2f}%".format(time_1, total, total / time_1 * 100))
     if EPSILON > FINAL_EPSILON:
         EPSILON -= (START_EPSILON - FINAL_EPSILON) / EXPLORE
-        if i_episode % 50 == 0:
+        if i_episode % 200 == 0 and i_episode != 0:
             """每50局游戏保存一次参数"""
             print("保存参数和记忆")
             train_state = {'network': agent.network.state_dict(),
@@ -226,7 +224,7 @@ for i_episode in range(TOTAL_EPISODES):
                            'optimizer': agent.optimizer.state_dict(),
                            }
             torch.save(train_state, ".\\TrainedAgent\\state.pth")
-            """每50回合固化记忆"""
+            """每200回合固化记忆"""
             pickle.dump(agent.memory, open(".\\memory\\nature_DQN_memory", "wb"))
     # TEST
     # if i_episode % TEST_FREQUENCY == 0:
@@ -247,5 +245,5 @@ for i_episode in range(TOTAL_EPISODES):
     #         state = next_state
     #         if done:
     #             break
-        # print('episode: {} , total_reward: {}'.format(i_episode, round(total_reward, 3)))
+    # print('episode: {} , total_reward: {}'.format(i_episode, round(total_reward, 3)))
 env.close()

@@ -12,15 +12,15 @@ class AtariNet(nn.Module):
         )
         self.conv2 = nn.Sequential(
             nn.Conv2d(32, 64, kernel_size=4, stride=2),
-            nn.ReLU()
+            nn.ReLU(inplace=True)
         )
         self.conv3 = nn.Sequential(
             nn.Conv2d(64, 64, kernel_size=3, stride=1),
-            nn.ReLU()
+            nn.ReLU(inplace=True)
         )
         self.hidden = nn.Sequential(
             nn.Linear(64 * 7 * 7, 512, bias=True),
-            nn.ReLU()
+            nn.ReLU(inplace=True)
         )
         self.out = nn.Sequential(
             nn.Linear(512, num_actions, bias=True)
