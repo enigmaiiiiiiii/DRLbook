@@ -14,7 +14,7 @@ import pickle
 from collections import namedtuple
 
 Transition = namedtuple("Transition", ('state', 'action', 'reward', 'next_state', 'done'))
-writer = SummaryWriter('./losslog')
+# writer = SummaryWriter('./losslog')
 
 BATCH_SIZE = 32
 LR = 0.001
@@ -25,7 +25,7 @@ EXPLORE = 1000000
 GAMMA = 0.99
 TOTAL_EPISODES = 10000000
 MEMORY_SIZE = 100000  # 记忆容量
-MEMORY_THRESHOLD = 100000  # 开始训练阈值
+MEMORY_THRESHOLD = 50000  # 开始训练阈值
 UPDATE_TIME = 10000
 TEST_FREQUENCY = 1000
 env = gym.make('Pong-v0')
@@ -41,8 +41,8 @@ class Agent(object):
         self.optimizer = torch.optim.Adam(self.network.parameters(), lr=LR)  # 优化器只更新主网络参数，因为要从target网络中选择参数
         """显存占用,loss反向传播，更新参数网络权重Weight,优化器占用大量现存"""
         self.memory = deque(maxlen=MEMORY_SIZE)  # 数据量较多时，deque比list快？
-        if hotstart and os.path.exists(".\\TrainedAgent\\state.pth"):
-            checkpoint = torch.load(".\\TrainedAgent\\state.pth")
+        if hotstart and os.path.exists("D:\\PycharmProjects\\nature_DQN\\TrainedAgent\\state.pth"):
+            checkpoint = torch.load("D:\\PycharmProjects\\nature_DQN\\TrainedAgent\\state.pth")
             self.network.load_state_dict(checkpoint['network'])
             self.target_network.load_state_dict(checkpoint['target_network'])
             # self.optimizer.load_state_dict(checkpoint['optimizer'])
@@ -52,7 +52,7 @@ class Agent(object):
 
         self.learning_count = 0
         self.loss_func = nn.MSELoss()
-        self.loss = torch.FloatTensor(0).to(device)
+        self.loss = torch.tensor(0).to(device)
         self.network.to(device)
         self.target_network.to(device)
 
@@ -212,8 +212,16 @@ for i_episode in range(TOTAL_EPISODES):
         if done:
             break
     time_1 = time.time() - start_time
-    writer.add_scalar("time_1", time_1, i_episode)
-    print("训练时间总时间：{0:.4f}\thotlearn方法总时间：{1:.4f}\t百分比：{2:.2f}%".format(time_1, total, total / time_1 * 100))
+    # writer.add_scalar("time_1", time_1, i_episode)
+    print("训练时间总时间：{0:.4f}\t"
+          "hotlearn方法总时间：{1:.4f}\t"
+          "百分比：{2:.2f}%\t"
+          "i_episode:{3}\t"
+          "loss:{4:.6f}".format(time_1,
+                                               total,
+                                               total / time_1 * 100,
+                                               i_episode,
+                                               agent.loss.item()))
     if EPSILON > FINAL_EPSILON:
         EPSILON -= (START_EPSILON - FINAL_EPSILON) / EXPLORE
         if i_episode % 200 == 0 and i_episode != 0:
@@ -223,9 +231,9 @@ for i_episode in range(TOTAL_EPISODES):
                            'target_network': agent.target_network.state_dict(),
                            'optimizer': agent.optimizer.state_dict(),
                            }
-            torch.save(train_state, ".\\TrainedAgent\\state.pth")
-            """每200回合固化记忆"""
-            pickle.dump(agent.memory, open(".\\memory\\nature_DQN_memory", "wb"))
+            torch.save(train_state, "D:\\PycharmProjects\\nature_DQN\\TrainedAgent\\state.pth")
+        #     """每200回合固化记忆"""
+        #     pickle.dump(agent.memory, open(".\\memory\\nature_DQN_memory", "wb"))
     # TEST
     # if i_episode % TEST_FREQUENCY == 0:
     #     """每1000回合，do something"""
