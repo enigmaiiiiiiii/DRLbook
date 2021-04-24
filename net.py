@@ -74,3 +74,27 @@ class CnnDQN(nn.Module):
 
     def features_size(self):
         return self.features(torch.zeros(1, *self.inut_shape)).view(1, -1).size(1)
+
+
+class Net(nn.Module):
+
+    def __init__(self, num_states, num_actions):
+        super(Net, self).__init__()
+        self.features = nn.Sequential(
+            nn.Linear(num_states, 32, bias=True),
+            nn.ReLU(inplace=True),
+            nn.Linear(32, 32, bias=True),
+            nn.ReLU(inplace=True),
+            nn.Linear(32, num_actions, bias=True)
+        )
+        # self.norm1 = nn.BatchNorm1d(128)
+        # self.dropout1 = nn.Dropout(p=0.25)
+        # self.flatten2 = nn.Linear(128, 10)
+
+        for m in self.features.children():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+
+    def forward(self, x):
+        x = self.features(x)
+        return x
