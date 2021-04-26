@@ -81,11 +81,12 @@ class Net(nn.Module):
     def __init__(self, num_states, num_actions):
         super(Net, self).__init__()
         self.features = nn.Sequential(
-            nn.Linear(num_states, 32, bias=True),
+            nn.Linear(num_states, 128, bias=True),
             nn.ReLU(inplace=True),
-            nn.Linear(32, 32, bias=True),
+            nn.Linear(128, 64, bias=True),
             nn.ReLU(inplace=True),
-            nn.Linear(32, num_actions, bias=True)
+            nn.BatchNorm1d(64),
+            nn.Linear(64, num_actions, bias=True)
         )
         # self.norm1 = nn.BatchNorm1d(128)
         # self.dropout1 = nn.Dropout(p=0.25)
@@ -94,6 +95,8 @@ class Net(nn.Module):
         for m in self.features.children():
             if isinstance(m, nn.Linear):
                 nn.init.xavier_uniform_(m.weight)
+            elif isinstance(m, nn.BatchNorm1d):
+                m.weight.data.fill_(1)
 
     def forward(self, x):
         x = self.features(x)
