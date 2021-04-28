@@ -5,7 +5,7 @@ import numpy as np
 import gym
 import random
 from net import AtariNet
-from util import preprocess,extract
+from util import preprocess, extract
 import os
 from PIL import Image
 from torch.utils.tensorboard import SummaryWriter
@@ -41,8 +41,8 @@ class Agent(object):
         self.optimizer = torch.optim.Adam(self.network.parameters(), lr=LR)  # 优化器只更新主网络参数，因为要从target网络中选择参数
         """显存占用,loss反向传播，更新参数网络权重Weight,优化器占用大量现存"""
         self.memory = deque(maxlen=MEMORY_SIZE)  # 数据量较多时，deque比list快？
-        if hotstart and os.path.exists(".\\TrainedAgent\\state.pth"):
-            checkpoint = torch.load(".\\TrainedAgent\\state.pth")
+        if hotstart and os.path.exists("./TrainedAgent/state.pth"):
+            checkpoint = torch.load("./TrainedAgent/state.pth")
             self.network.load_state_dict(checkpoint['network'])
             self.target_network.load_state_dict(checkpoint['target_network'])
             # self.optimizer.load_state_dict(checkpoint['optimizer'])
@@ -160,7 +160,7 @@ class Agent(object):
         self.optimizer.step()
 
 
-agent = Agent(hotstart=False)
+agent = Agent()
 imageno = 0
 reward_num = 0
 reward_time = time.time()
@@ -170,17 +170,19 @@ for i_episode in range(TOTAL_EPISODES):
     torch.cuda.empty_cache()
     start_time = time.time()
     state = env.reset()
-    state = extract(state)
+    state = preprocess(state)
     state = torch.FloatTensor(state).to(device)
     total = 0
+    score = 0
     """像素状态处理，压缩转置"""
     while True:
         """一方分数达到21，done为True,while循环结束"""
-        env.render()
+        # env.render()
         action = agent.action(state, True)
         next_state, reward, done, info = env.step(action)
+        score += reward
         action = torch.tensor([action]).to(device)
-
+        next_state = preprocess(next_state)
         next_state = torch.FloatTensor(next_state).to(device)
         reward = torch.tensor([reward]).to(device)
 
@@ -216,11 +218,11 @@ for i_episode in range(TOTAL_EPISODES):
           "hotlearn方法总时间：{1:.4f}\t"
           "百分比：{2:.2f}%\t"
           "i_episode:{3}\t"
-          "loss:{4:.6f}".format(time_1,
-                                               total,
-                                               total / time_1 * 100,
-                                               i_episode,
-                                               agent.loss.item()))
+          "得分:{4}".format(time_1,
+                          total,
+                          total / time_1 * 100,
+                          i_episode,
+                          score))
     if EPSILON > FINAL_EPSILON:
         EPSILON -= (START_EPSILON - FINAL_EPSILON) / EXPLORE
         if i_episode % 200 == 0 and i_episode != 0:
@@ -230,7 +232,7 @@ for i_episode in range(TOTAL_EPISODES):
                            'target_network': agent.target_network.state_dict(),
                            'optimizer': agent.optimizer.state_dict(),
                            }
-            torch.save(train_state, ".\\TrainedAgent\\state.pth")
+            torch.save(train_state, "./TrainedAgent/state.pth")
         #     """每200回合固化记忆"""
         #     pickle.dump(agent.memory, open(".\\memory\\nature_DQN_memory", "wb"))
     # TEST

@@ -31,7 +31,7 @@ TEST_FREQUENCY = 1000
 env = gym.make('Pong-v0')
 env = env.unwrapped
 ACTIONS_SIZE = env.action_space.n  # [0:5]  6
-STATES_SIZE = 120
+STATES_SIZE = 32
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -110,15 +110,14 @@ class Agent(object):
         self.optimizer.step()
 
 
-agent = Agent()
+agent = Agent(hotstart=False)
 imageno = 0
 
 for i_episode in range(TOTAL_EPISODES):
     torch.cuda.empty_cache()
     start_time = time.time()
-    state = env.reset()
-    state = extract_initial(state)
-    state = torch.FloatTensor(state).to(device)
+    env.reset()
+    state = torch.FloatTensor(1,32).to(device)
     total = 0
     score = 0
     """像素状态处理，压缩转置"""
@@ -129,7 +128,7 @@ for i_episode in range(TOTAL_EPISODES):
         next_state, reward, done, info = env.step(action)
         score += reward
         action = torch.tensor([action]).to(device)
-        next_state = extract(next_state)  # 训练特征
+        next_state = split3(next_state)  # 训练特征
 
         next_state = torch.FloatTensor(next_state).to(device)
         reward = torch.tensor([reward]).to(device)

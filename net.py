@@ -81,9 +81,9 @@ class Net(nn.Module):
     def __init__(self, num_states, num_actions):
         super(Net, self).__init__()
         self.features = nn.Sequential(
-            nn.Linear(num_states, 128, bias=True),
+            nn.Linear(num_states,64, bias=True),
             nn.ReLU(inplace=True),
-            nn.Linear(128, 64, bias=True),
+            nn.Linear(64, 64, bias=True),
             nn.ReLU(inplace=True),
             nn.BatchNorm1d(64),
             nn.Linear(64, num_actions, bias=True)
@@ -100,4 +100,5 @@ class Net(nn.Module):
 
     def forward(self, x):
         x = self.features(x)
+        x = torch.sigmoid(x)
         return x
